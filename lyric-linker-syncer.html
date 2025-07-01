@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual Lyric Synchronizer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        main {
+            flex-grow: 1;
+        }
+        /* Custom scrollbar styling */
+        #lyrics-container::-webkit-scrollbar, #library-list::-webkit-scrollbar, #batch-results::-webkit-scrollbar, .help-content::-webkit-scrollbar {
+            width: 8px;
+        }
+        #lyrics-container::-webkit-scrollbar-track, #library-list::-webkit-scrollbar-track, #batch-results::-webkit-scrollbar-track, .help-content::-webkit-scrollbar-track {
+            background: #f1f5f9; /* slate-100 */
+            border-radius: 10px;
+        }
+        #lyrics-container::-webkit-scrollbar-thumb, #library-list::-webkit-scrollbar-thumb, #batch-results::-webkit-scrollbar-thumb, .help-content::-webkit-scrollbar-thumb {
+            background: #94a3b8; /* slate-400 */
+            border-radius: 10px;
+        }
+        #lyrics-container::-webkit-scrollbar-thumb:hover, #library-list::-webkit-scrollbar-thumb:hover, #batch-results::-webkit-scrollbar-thumb:hover, .help-content::-webkit-scrollbar-thumb:hover {
+            background: #475569; /* slate-600 */
+        }
+
+        /* Lyric line styling and animations */
+        .lyric-line {
+            transition: all 0.2s ease-in-out;
+            opacity: 0.5;
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .lyric-line.active {
+            opacity: 1;
+            transform: scale(1.05);
+            background-color: rgba(59, 130, 246, 0.1); /* blue-500 with opacity */
+            font-weight: 600;
+        }
+        
+        /* Styling for hidden file inputs */
+        #local-audio-input-container, #batch-mp3-input-container, #batch-lrc-input-container {
+            position: relative;
+        }
+        #local-audio-input, #batch-mp3-input, #batch-lrc-input {
+            opacity: 0;
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+        }
+        
+        /* Modal styling */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 0.75rem;
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
+            max-width: 90%;
+            width: 500px;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800">
+    <main class="flex items-center justify-center py-8">
+        <div class="container mx-auto p-4 max-w-7xl w-full">
+            <div class="bg-white rounded-xl shadow-2xl overflow-hidden">
+                <div class="p-6 md:p-8">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h1 class="text-3xl md:text-4xl font-bold text-slate-900 mb-2">Manual Lyric Synchronizer</h1>
+                            <p class="text-slate-600 mb-6">Load an MP3 and an LRC file to see synchronized lyrics.</p>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button id="help-btn" class="bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-md hover:bg-gray-300 transition duration-300">Help</button>
+                            <button id="open-library-btn" class="bg-blue-200 text-blue-700 font-semibold py-2 px-4 rounded-md hover:bg-blue-300 transition duration-300">Library</button>
+                        </div>
+                    </div>
+                    
+                    <div id="local-audio-input-container" class="mb-4 relative">
+                        <label for="local-audio-input" class="block text-sm font-medium text-slate-700 mb-1">MP3 Audio File</label>
+                        <div class="w-full text-center px-3 py-2 bg-slate-200 text-slate-700 border border-slate-300 rounded-md">
+                            <span id="local-audio-filename">Click to select a file...</span>
+                        </div>
+                        <input type="file" id="local-audio-input" accept="audio/mpeg,audio/mp3">
+                    </div>
+
+                    <div id="manual-lrc-section">
+                         <div class="mb-4 p-4 border border-dashed rounded-lg border-slate-300">
+                             <h3 class="font-bold mb-2 text-lg text-slate-900">Single LRC File</h3>
+                             <div class="mb-4">
+                                 <label for="manual-lrc-text" class="block text-sm font-medium text-slate-700 mb-1">Paste LRC Content</label>
+                                 <textarea id="manual-lrc-text" rows="6" placeholder="[00:10.50]First line of lyrics&#10;[00:12.30]Second line of lyrics" class="w-full px-3 py-2 bg-slate-50 text-slate-800 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"></textarea>
+                             </div>
+                             <button id="load-lrc-btn" class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-md hover:bg-green-700 transition duration-300">Load Single LRC</button>
+                         </div>
+                        <div class="mb-4 p-4 border border-dashed rounded-lg border-slate-300">
+                            <h3 class="font-bold mb-2 text-lg text-slate-900">Batch Processing</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                <div id="batch-mp3-input-container">
+                                    <label for="batch-mp3-input" class="block text-sm font-medium text-slate-700 mb-1">1. Select MP3 Files</label>
+                                    <div class="w-full text-center px-3 py-2 bg-slate-200 text-slate-700 border border-slate-300 rounded-md">
+                                        <span id="batch-mp3-filenames">Click to select files...</span>
+                                    </div>
+                                    <input type="file" id="batch-mp3-input" accept="audio/mpeg,audio/mp3" multiple>
+                                </div>
+                                <div id="batch-lrc-input-container">
+                                    <label for="batch-lrc-input" class="block text-sm font-medium text-slate-700 mb-1">2. Select LRC Files</label>
+                                    <div class="w-full text-center px-3 py-2 bg-slate-200 text-slate-700 border border-slate-300 rounded-md">
+                                        <span id="batch-lrc-filenames">Click to select files...</span>
+                                    </div>
+                                    <input type="file" id="batch-lrc-input" accept=".lrc" multiple>
+                                </div>
+                            </div>
+                            <button id="process-batch-btn" class="w-full bg-purple-600 text-white font-bold py-3 px-4 rounded-md hover:bg-purple-700 transition duration-300">Process Batch</button>
+                            <div id="batch-results-container" class="mt-4 hidden">
+                                <h4 class="font-semibold text-slate-900">Batch Results:</h4>
+                                <div id="batch-results" class="h-32 bg-gray-800 text-white font-mono text-xs p-2 rounded-md overflow-y-auto"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+                
+                <div id="main-content-area" class="grid grid-cols-1 gap-6 p-6 md:p-8 bg-slate-50 border-t border-slate-200 hidden">
+                    <div id="player-section" class="space-y-4">
+                        <div id="local-player-wrapper" class="flex items-center justify-center rounded-lg shadow-lg bg-black">
+                            <audio id="local-audio-player" controls class="w-full"></audio>
+                        </div>
+                        <!-- Offset Controls -->
+                        <div id="offset-controls" class="flex items-center justify-center space-x-4">
+                            <button id="offset-down-btn" class="px-4 py-2 bg-gray-200 rounded-md hover:bg-gray-300">-0.1s</button>
+                            <span id="offset-display" class="font-mono text-lg">Offset: 0.0s</span>
+                            <button id="offset-up-btn" class="px-4 py-2 bg-gray-200 rounded-md hover:bg-gray-300">+0.1s</button>
+                        </div>
+                        <div id="lyrics-container" class="h-64 lg:h-[26rem] bg-slate-100 rounded-lg p-4 overflow-y-auto text-lg md:text-xl leading-relaxed text-center">
+                            <p id="lyrics-placeholder" class="text-slate-500 h-full flex items-center justify-center">Awaiting a song...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Error Modal -->
+                <div id="error-modal" class="hidden modal-overlay">
+                    <div class="modal-content">
+                        <h3 class="text-lg font-bold text-red-600">Error</h3>
+                        <p id="error-message" class="mt-2 text-sm text-slate-700">Something went wrong.</p>
+                        <button id="close-modal-btn" class="mt-4 w-full bg-red-500 text-white py-2 px-4 rounded-md hover:bg-red-600">Close</button>
+                    </div>
+                </div>
+
+                <!-- Save To Library Confirmation Modal -->
+                <div id="save-to-library-modal" class="hidden modal-overlay">
+                    <div class="modal-content">
+                        <h3 class="text-lg font-bold text-slate-800 mb-2">Save Song to Library?</h3>
+                        <p id="save-song-info" class="text-slate-700 mb-4"></p>
+                        <div class="flex justify-end space-x-2">
+                            <button id="cancel-save-btn" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300">Cancel</button>
+                            <button id="confirm-save-btn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Save</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Library Modal -->
+                <div id="library-modal" class="hidden modal-overlay">
+                    <div class="modal-content max-w-2xl w-full">
+                        <h3 class="text-xl font-bold text-slate-800 mb-4">Your Synced Lyrics Library</h3>
+                        <div class="flex justify-between items-center mb-4">
+                            <button id="export-library-btn" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">Export Library</button>
+                            <input type="file" id="import-library-input" accept=".json" class="hidden">
+                            <button id="import-library-btn" class="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700">Import Library</button>
+                        </div>
+                        <div id="library-list" class="h-80 overflow-y-auto bg-slate-100 rounded-lg p-4 space-y-2">
+                            <p class="text-slate-500 text-center">No songs in library yet.</p>
+                        </div>
+                        <button id="close-library-modal-btn" class="mt-6 w-full bg-slate-500 text-white py-2 px-4 rounded-md hover:bg-slate-600">Close Library</button>
+                    </div>
+                </div>
+
+                <!-- Help Modal -->
+                <div id="help-modal" class="hidden modal-overlay">
+                    <div class="modal-content max-w-2xl w-full">
+                        <h3 class="text-xl font-bold text-slate-800 mb-4">How to Use the Lyric Synchronizer</h3>
+                        <div class="space-y-4 text-slate-700 help-content max-h-96 overflow-y-auto pr-2">
+                            <div class="p-4 bg-slate-50 rounded-lg">
+                                <h4 class="font-semibold text-lg mb-2">1. Loading a Single Song</h4>
+                                <p class="mb-2">To sync lyrics for a single song, you need two things: the MP3 audio file and its corresponding LRC lyrics file.</p>
+                                <ol class="list-decimal list-inside space-y-1">
+                                    <li>Click the "MP3 Audio File" area to select your audio file from your computer.</li>
+                                    <li>Paste the entire content of your LRC file into the "Paste LRC Content" text area. The format should look like `[mm:ss.xx] Lyric line`.</li>
+                                    <li>Click the "Load Single LRC" button.</li>
+                                    <li>The player and lyrics will appear. You can now play the song and see the lyrics highlight in time with the music.</li>
+                                </ol>
+                            </div>
+                             <div class="p-4 bg-slate-50 rounded-lg">
+                                <h4 class="font-semibold text-lg mb-2">2. Adjusting Sync Offset</h4>
+                                <p>If the lyrics are slightly out of sync, you can adjust the timing using the offset controls below the player. Use `+0.1s` to make the lyrics appear later, and `-0.1s` to make them appear earlier.</p>
+                            </div>
+                            <div class="p-4 bg-slate-50 rounded-lg">
+                                <h4 class="font-semibold text-lg mb-2">3. Batch Processing (Advanced)</h4>
+                                <p class="mb-2">This feature allows you to process multiple MP3 and LRC files at once and save them to your library automatically.</p>
+                                <ol class="list-decimal list-inside space-y-1">
+                                    <li>Under "Batch Processing", click to select all the MP3 files you want to process.</li>
+                                    <li>Then, click to select all the corresponding LRC files.</li>
+                                    <li>The tool will attempt to match MP3s to LRCs based on their filenames (e.g., `Song.mp3` will match `Song.lrc`).</li>
+                                    <li>Click "Process Batch". The results will appear in the box below, and successful matches will be added to your library.</li>
+                                </ol>
+                            </div>
+                            <div class="p-4 bg-slate-50 rounded-lg">
+                                <h4 class="font-semibold text-lg mb-2">4. Using the Library</h4>
+                                <p class="mb-2">The library stores your successfully synced songs in your browser's local storage.</p>
+                                <ul class="list-disc list-inside space-y-1">
+                                    <li><strong>Saving:</strong> After loading a single song, you'll be prompted to save it to the library.</li>
+                                    <li><strong>Viewing:</strong> Click the "Library" button to view all your saved songs.</li>
+                                    <li><strong>Loading:</strong> Click on a song in the library to load its lyrics. You will need to re-select the matching MP3 file to enable playback.</li>
+                                    <li><strong>Export/Import:</strong> You can export your entire library to a JSON file as a backup, or import a previously exported library file.</li>
+                                </ul>
+                            </div>
+                        </div>
+                        <button id="close-help-modal-btn" class="mt-6 w-full bg-slate-500 text-white py-2 px-4 rounded-md hover:bg-slate-600">Close Help</button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+    <footer class="text-center p-4 text-slate-500 text-sm">
+        made with love from the Synapse Media Team &nbsp;💕
+    </footer>
+
+    <script>
+        // --- DOM Elements ---
+        const localAudioInput = document.getElementById('local-audio-input');
+        const localAudioFilename = document.getElementById('local-audio-filename');
+        const mainContentArea = document.getElementById('main-content-area');
+        const localAudioPlayer = document.getElementById('local-audio-player');
+        const lyricsContainer = document.getElementById('lyrics-container');
+        const errorModal = document.getElementById('error-modal');
+        const errorMessage = document.getElementById('error-message');
+        const closeModalBtn = document.getElementById('close-modal-btn');
+        const offsetDownBtn = document.getElementById('offset-down-btn');
+        const offsetUpBtn = document.getElementById('offset-up-btn');
+        const offsetDisplay = document.getElementById('offset-display');
+        const offsetControls = document.getElementById('offset-controls');
+        
+        const manualLrcText = document.getElementById('manual-lrc-text');
+        const loadLrcBtn = document.getElementById('load-lrc-btn');
+
+        // Batch processing elements
+        const batchMp3Input = document.getElementById('batch-mp3-input');
+        const batchLrcInput = document.getElementById('batch-lrc-input');
+        const batchMp3Filenames = document.getElementById('batch-mp3-filenames');
+        const batchLrcFilenames = document.getElementById('batch-lrc-filenames');
+        const processBatchBtn = document.getElementById('process-batch-btn');
+        const batchResultsContainer = document.getElementById('batch-results-container');
+        const batchResults = document.getElementById('batch-results');
+
+        // Library elements
+        const openLibraryBtn = document.getElementById('open-library-btn');
+        const libraryModal = document.getElementById('library-modal');
+        const closeLibraryModalBtn = document.getElementById('close-library-modal-btn');
+        const libraryList = document.getElementById('library-list');
+        const exportLibraryBtn = document.getElementById('export-library-btn');
+        const importLibraryBtn = document.getElementById('import-library-btn');
+        const importLibraryInput = document.getElementById('import-library-input');
+
+        // Save to Library Modal elements
+        const saveToLibraryModal = document.getElementById('save-to-library-modal');
+        const saveSongInfo = document.getElementById('save-song-info');
+        const confirmSaveBtn = document.getElementById('confirm-save-btn');
+        const cancelSaveBtn = document.getElementById('cancel-save-btn');
+        
+        // Help Modal elements
+        const helpBtn = document.getElementById('help-btn');
+        const helpModal = document.getElementById('help-modal');
+        const closeHelpModalBtn = document.getElementById('close-help-modal-btn');
+
+        // --- State ---
+        let lyrics = [];
+        let animationFrameId;
+        let syncOffset = 0.0;
+        
+        const LIBRARY_STORAGE_KEY = 'mp3_lyric_visualizer_library';
+        let library = [];
+
+        // --- Core Logic ---
+        
+        function loadManualLRC() {
+             const lrcText = manualLrcText.value.trim();
+             if (!lrcText) return showError("Please enter LRC lyrics in the provided text area.");
+             if (!localAudioInput.files[0]) return showError("Please select an MP3 file to associate with this LRC data.");
+             
+             const parsed = parseLRC(lrcText);
+             if (!parsed || parsed.length === 0) return showError("Failed to parse manual LRC lyrics. Please check the format.");
+             
+             lyrics = parsed;
+             displayLyrics();
+             mainContentArea.classList.remove('hidden');
+             const { artist, track } = parseFilename(localAudioFilename.textContent);
+             showSaveToLibraryPrompt(artist, track);
+        }
+        
+        function parseLRC(lrcText) {
+            if (!lrcText) return [];
+            const lines = lrcText.split('\n');
+            const parsedLyrics = [];
+            const lineTimeRegex = /\[(\d{2}):(\d{2})[.:](\d{2,3})\](.*)/;
+
+            for (const line of lines) {
+                const match = line.trim().match(lineTimeRegex);
+                if (match) {
+                    const [, min, sec, ms, text] = match;
+                    const time = parseInt(min, 10) * 60 + parseInt(sec, 10) + parseInt(ms, 10) / (ms.length === 2 ? 100 : 1000);
+                    parsedLyrics.push({ time, text: text.trim() });
+                }
+            }
+            
+            parsedLyrics.sort((a,b) => a.time - b.time);
+
+            for (let i = 0; i < parsedLyrics.length; i++) {
+                parsedLyrics[i].endTime = (i < parsedLyrics.length - 1) ? parsedLyrics[i+1].time : localAudioPlayer.duration || Number.MAX_SAFE_INTEGER;
+            }
+
+            return parsedLyrics.length > 0 ? parsedLyrics : [];
+        }
+        
+        function displayLyrics() {
+            lyricsContainer.innerHTML = '';
+             if (!lyrics || lyrics.length === 0) {
+                 lyricsContainer.innerHTML = `<p id="lyrics-placeholder" class="text-slate-500">No lyrics to display.</p>`;
+                 return;
+             }
+            lyrics.forEach((line) => {
+                const lineEl = document.createElement('p');
+                lineEl.classList.add('lyric-line');
+                lineEl.setAttribute('data-time', line.time);
+                lineEl.textContent = line.text;
+                lineEl.addEventListener('click', () => {
+                    localAudioPlayer.currentTime = line.time - syncOffset;
+                });
+                lyricsContainer.appendChild(lineEl);
+            });
+        }
+        
+        function syncLyrics() {
+            if (!localAudioPlayer || localAudioPlayer.paused || !lyrics || lyrics.length === 0) return;
+            
+            const currentTime = localAudioPlayer.currentTime + syncOffset;
+            let activeLineIndex = -1;
+            
+            for (let i = 0; i < lyrics.length; i++) {
+                if (currentTime >= lyrics[i].time && currentTime < lyrics[i].endTime) {
+                    activeLineIndex = i;
+                    break;
+                }
+            }
+
+            document.querySelectorAll('.lyric-line').forEach((lineEl, index) => {
+                const isActive = index === activeLineIndex;
+                if (isActive && !lineEl.classList.contains('active')) {
+                     lineEl.classList.add('active');
+                     lineEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                } else if (!isActive && lineEl.classList.contains('active')) {
+                    lineEl.classList.remove('active');
+                }
+            });
+        }
+
+        function startSyncLoop() { cancelAnimationFrame(animationFrameId); animationFrameId = requestAnimationFrame(runSyncLoop); }
+        function stopSyncLoop() { cancelAnimationFrame(animationFrameId); }
+        function runSyncLoop() { syncLyrics(); animationFrameId = requestAnimationFrame(runSyncLoop); }
+        
+        function parseFilename(filename) {
+            let cleaned = filename.replace(/\.[^/.]+$/, ""); // Remove extension
+            const separators = / - | – | _ /;
+            if (separators.test(cleaned)) {
+                const parts = cleaned.split(separators);
+                return { artist: parts[0].trim(), track: parts[1].trim() };
+            }
+            return { artist: '', track: cleaned.trim() };
+        }
+
+        async function handleFileSelect() {
+            const file = localAudioInput.files[0];
+            if (!file) return;
+
+            localAudioFilename.textContent = file.name;
+            lyrics = [];
+            setSyncOffset(0);
+            mainContentArea.classList.add('hidden');    
+            manualLrcText.value = '';
+
+            localAudioPlayer.src = URL.createObjectURL(file);
+            await new Promise(resolve => {
+                localAudioPlayer.onloadedmetadata = () => resolve();
+            });
+        }
+
+        function setSyncOffset(newValue) {
+            syncOffset = newValue;
+            offsetDisplay.textContent = `Offset: ${syncOffset.toFixed(1)}s`;
+        }
+        
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorModal.classList.remove('hidden');
+        }
+
+        // --- Library Functions ---
+        function loadLibraryFromLocalStorage() {
+            try {
+                const storedLibrary = localStorage.getItem(LIBRARY_STORAGE_KEY);
+                library = storedLibrary ? JSON.parse(storedLibrary) : [];
+            } catch (e) {
+                console.error(`Error loading library from localStorage: ${e.message}`);
+                library = [];
+            }
+        }
+
+        function saveLibraryToLocalStorage() {
+            try {
+                localStorage.setItem(LIBRARY_STORAGE_KEY, JSON.stringify(library));
+            } catch (e) {
+                console.error(`Error saving library to localStorage: ${e.message}`);
+            }
+        }
+
+        function showSaveToLibraryPrompt(artist, title) {
+            saveToLibraryModal.classList.remove('hidden');
+            saveSongInfo.textContent = `Do you want to save "${title}" by ${artist || 'Unknown Artist'} to your local library?`;
+        }
+
+        function saveCurrentSongToLibrary() {
+            const { artist, track } = parseFilename(localAudioFilename.textContent);
+            const songIdentifier = localAudioInput.files[0]?.name || `${track}-${artist}`;
+
+            if (!songIdentifier) return showError("Cannot save to library: Filename is missing.");
+            if (!lyrics || lyrics.length === 0) return showError("Cannot save to library: Lyrics are missing.");
+
+            const existingIndex = library.findIndex(song => song.identifier === songIdentifier);
+            const newSong = { 
+                identifier: songIdentifier, 
+                title: track, 
+                artist: artist, 
+                lyrics: lyrics
+            };
+            
+            if (existingIndex > -1) {
+                library[existingIndex] = newSong;
+            } else {
+                library.push(newSong);
+            }
+            saveLibraryToLocalStorage();
+            saveToLibraryModal.classList.add('hidden');
+        }
+
+        function displayLibrary() {
+            libraryList.innerHTML = '';
+            if (library.length === 0) {
+                libraryList.innerHTML = '<p class="text-slate-500 text-center">No songs in library yet.</p>';
+                return;
+            }
+            library.forEach((song, index) => {
+                const songEl = document.createElement('div');
+                songEl.className = 'p-3 bg-white rounded-md shadow-sm flex justify-between items-center';
+                
+                const infoDiv = document.createElement('div');
+                infoDiv.className = 'cursor-pointer flex-grow';
+                infoDiv.innerHTML = `
+                    <p class="font-semibold text-slate-800">${song.title || 'Unknown Title'}</p>
+                    <p class="text-sm text-slate-500">${song.artist || 'Unknown Artist'}</p>
+                    <p class="text-xs text-slate-400">File: ${song.identifier || 'N/A'}</p>
+                `;
+                infoDiv.addEventListener('click', () => loadSongFromLibrary(index));
+                
+                songEl.appendChild(infoDiv);
+                libraryList.appendChild(songEl);
+            });
+        }
+        
+        function loadSongFromLibrary(index) {
+            const song = library[index];
+            localAudioInput.value = ''; 
+            localAudioFilename.textContent = `LOADED FROM LIBRARY: ${song.identifier}. Please re-select the matching MP3 file to play.`;
+            lyrics = song.lyrics;
+
+            setSyncOffset(0);
+            displayLyrics();
+            mainContentArea.classList.remove('hidden');
+            libraryModal.classList.add('hidden');
+        }
+
+        function exportLibrary() {
+            if (library.length === 0) return showError("Library is empty. Nothing to export.");
+            const dataStr = JSON.stringify(library, null, 2);
+            const blob = new Blob([dataStr], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'mp3_lyric_visualizer_library.json';
+            a.click();
+            URL.revokeObjectURL(url);
+            a.remove();
+        }
+
+        function importLibrary(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const importedData = JSON.parse(e.target.result);
+                    if (Array.isArray(importedData)) { 
+                        library = importedData;
+                        saveLibraryToLocalStorage();
+                        displayLibrary();
+                    } else { throw new Error("Invalid format."); }
+                } catch (err) { showError(`Failed to import library: ${err.message}`); }
+            };
+            reader.readAsText(file);
+            event.target.value = '';
+        }
+        
+        // --- BATCH PROCESSING ---
+        
+        function normalizeName(name) {
+            return name
+                .replace(/\.(mp3|mpeg|lrc)$/i, '') // Remove extensions
+                .toLowerCase()
+                .replace(/\[.*?\]/g, '') // Remove text in square brackets
+                .replace(/\(.*?\)/g, '') // Remove text in parentheses
+                .replace(/[_-]/g, ' ')   // Replace underscores/hyphens with spaces
+                .replace(/\s+/g, ' ')    // Collapse multiple spaces
+                .trim();
+        }
+
+        function longestCommonSubstring(str1, str2) {
+            const s1 = [...str1];
+            const s2 = [...str2];
+            const m = s1.length;
+            const n = s2.length;
+            let max = 0;
+            const dp = Array(m).fill(0).map(() => Array(n).fill(0));
+            for (let i = 0; i < m; i++) {
+                for (let j = 0; j < n; j++) {
+                    if (s1[i] === s2[j]) {
+                        if (i === 0 || j === 0) {
+                            dp[i][j] = 1;
+                        } else {
+                            dp[i][j] = dp[i - 1][j - 1] + 1;
+                        }
+                        if (max < dp[i][j]) {
+                            max = dp[i][j];
+                        }
+                    }
+                }
+            }
+            return max;
+        }
+
+        async function handleBatchProcess() {
+            const mp3Files = Array.from(batchMp3Input.files);
+            const lrcFiles = Array.from(batchLrcInput.files);
+
+            if (mp3Files.length === 0 || lrcFiles.length === 0) {
+                return showError("Please select both MP3 and LRC files for batch processing.");
+            }
+
+            batchResultsContainer.classList.remove('hidden');
+            batchResults.innerHTML = '<p>Starting batch process...</p>';
+
+            let availableLrcs = await Promise.all(lrcFiles.map(async (file) => ({
+                file,
+                content: await file.text(),
+                normalized: normalizeName(file.name)
+            })));
+
+            let successCount = 0;
+
+            for (const mp3File of mp3Files) {
+                const mp3Normalized = normalizeName(mp3File.name);
+                let bestMatch = null;
+                let highestScore = 0;
+
+                for (const lrc of availableLrcs) {
+                    const score = longestCommonSubstring(mp3Normalized, lrc.normalized);
+                    if (score > highestScore) {
+                        highestScore = score;
+                        bestMatch = lrc;
+                    }
+                }
+
+                if (bestMatch && highestScore > 3) {
+                    batchResults.innerHTML += `<p class="text-cyan-400">MATCHED: ${mp3File.name} with ${bestMatch.file.name}</p>`;
+                    
+                    const parsedLyrics = parseLRC(bestMatch.content);
+                    
+                    if (parsedLyrics && parsedLyrics.length > 0) {
+                        const { artist, track } = parseFilename(mp3File.name);
+                        
+                        const newSong = {
+                            identifier: mp3File.name,
+                            title: track,
+                            artist: artist,
+                            lyrics: parsedLyrics,
+                        };
+
+                        const existingIndex = library.findIndex(song => song.identifier === newSong.identifier);
+                        if (existingIndex > -1) {
+                            library[existingIndex] = newSong;
+                        } else {
+                            library.push(newSong);
+                        }
+                        
+                        batchResults.innerHTML += `<p class="text-green-400">SUCCESS: Imported ${mp3File.name}</p>`;
+                        successCount++;
+
+                        availableLrcs = availableLrcs.filter(l => l !== bestMatch);
+
+                    } else {
+                        batchResults.innerHTML += `<p class="text-red-400">ERROR: Failed to parse LRC content from ${bestMatch.file.name} for ${mp3File.name}</p>`;
+                    }
+                } else {
+                    batchResults.innerHTML += `<p class="text-yellow-400">WARN: No suitable LRC file found for ${mp3File.name}</p>`;
+                }
+                batchResults.scrollTop = batchResults.scrollHeight;
+            }
+
+            saveLibraryToLocalStorage();
+            batchResults.innerHTML += `<p class="text-blue-400 font-bold">--- BATCH COMPLETE: ${successCount} songs imported/updated. ---</p>`;
+            batchResults.scrollTop = batchResults.scrollHeight;
+        }
+
+
+        // --- Event Listeners & Initial Load ---
+        
+        loadLrcBtn.addEventListener('click', loadManualLRC);
+
+        batchMp3Input.addEventListener('change', () => batchMp3Filenames.textContent = `${batchMp3Input.files.length} files selected`);
+        batchLrcInput.addEventListener('change', () => batchLrcFilenames.textContent = `${batchLrcInput.files.length} files selected`);
+        processBatchBtn.addEventListener('click', handleBatchProcess);
+
+        closeModalBtn.addEventListener('click', () => errorModal.classList.add('hidden'));
+        localAudioInput.addEventListener('change', handleFileSelect);
+
+        localAudioPlayer.addEventListener('play', startSyncLoop);
+        localAudioPlayer.addEventListener('pause', stopSyncLoop);
+        localAudioPlayer.addEventListener('seeking', syncLyrics); 
+
+        offsetDownBtn.addEventListener('click', () => { setSyncOffset(syncOffset - 0.1); syncLyrics(); });
+        offsetUpBtn.addEventListener('click', () => { setSyncOffset(syncOffset + 0.1); syncLyrics(); });
+
+        openLibraryBtn.addEventListener('click', () => { displayLibrary(); libraryModal.classList.remove('hidden'); });
+        closeLibraryModalBtn.addEventListener('click', () => libraryModal.classList.add('hidden'));
+        exportLibraryBtn.addEventListener('click', exportLibrary);
+        importLibraryBtn.addEventListener('click', () => importLibraryInput.click());
+        importLibraryInput.addEventListener('change', importLibrary);
+
+        confirmSaveBtn.addEventListener('click', saveCurrentSongToLibrary);
+        cancelSaveBtn.addEventListener('click', () => saveToLibraryModal.classList.add('hidden'));
+        
+        helpBtn.addEventListener('click', () => helpModal.classList.remove('hidden'));
+        closeHelpModalBtn.addEventListener('click', () => helpModal.classList.add('hidden'));
+        
+        window.addEventListener('load', () => {
+            loadLibraryFromLocalStorage();
+        });
+    </script>
+</body>
+</html>
